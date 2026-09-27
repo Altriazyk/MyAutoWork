@@ -1,0 +1,39 @@
+{
+  "id": "win.uia",
+  "builtin": true,
+  "name": "界面元素",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "按定位器找界面元素并操作它。定位器支持五级降级（AutomationId → 名称+类型 → 路径 → 图像 → 坐标），界面改了还能活。",
+  "author": "myautowork",
+  "category": "界面",
+  "keywords": [
+    "元素",
+    "element",
+    "uia",
+    "控件",
+    "点击",
+    "拾取",
+    "界面自动化"
+  ],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": [
+      "locate",
+      "click",
+      "read",
+      "set_text",
+      "wait",
+      "focus"
+    ],
+    "triggers": []
+  },
+  "dependencies": [
+    "uiautomation",
+    "pywin32",
+    "Pillow"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "core.time.delay",
+  "builtin": true,
+  "name": "时间",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "等待类动作。界面自动化里到处都要等：等窗口出现、等数据加载、等动画结束。",
+  "author": "myautowork",
+  "category": "时间",
+  "keywords": ["等待", "延时", "sleep", "delay"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": ["sleep"],
+    "triggers": []
+  }
+}

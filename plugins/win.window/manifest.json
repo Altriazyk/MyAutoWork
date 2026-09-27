@@ -1,0 +1,36 @@
+{
+  "id": "win.window",
+  "builtin": true,
+  "name": "窗口",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "Windows 窗口的查找、激活、等待与调整。界面自动化的第一步永远是先把目标窗口调到前台。",
+  "author": "myautowork",
+  "category": "界面",
+  "keywords": [
+    "窗口",
+    "window",
+    "激活",
+    "前台",
+    "focus",
+    "界面自动化"
+  ],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": [
+      "activate",
+      "wait",
+      "list",
+      "close",
+      "move",
+      "info"
+    ],
+    "triggers": []
+  },
+  "dependencies": [
+    "pywin32"
+  ]
+}

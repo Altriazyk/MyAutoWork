@@ -1,0 +1,19 @@
+{
+  "id": "core.file.write",
+  "builtin": true,
+  "name": "文件",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "文本文件读写。自动化的终点常常就是把结果落到磁盘上。",
+  "author": "myautowork",
+  "category": "文件",
+  "keywords": ["文件", "写入", "导出", "file"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": ["write"],
+    "triggers": []
+  }
+}

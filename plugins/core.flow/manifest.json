@@ -1,0 +1,35 @@
+{
+  "id": "core.flow",
+  "builtin": true,
+  "name": "流程控制",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "条件判断、循环、变量、数值与文本处理、列表与字典、断言、日志、等待文件或进程出现。流程的分岔、重复和收尾。",
+  "author": "myautowork",
+  "category": "流程控制",
+  "keywords": ["条件", "判断", "if", "分支", "循环", "遍历", "变量", "计算", "文本", "正则", "列表", "字典", "断言", "等待", "日志", "结束", "随机"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": [
+      "if",
+      "repeat",
+      "for_each",
+      "set_var",
+      "math",
+      "string",
+      "list",
+      "dict",
+      "assert",
+      "fail",
+      "log",
+      "end",
+      "random_wait",
+      "wait_file",
+      "wait_process"
+    ],
+    "triggers": []
+  }
+}

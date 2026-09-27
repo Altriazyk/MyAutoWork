@@ -1,0 +1,19 @@
+{
+  "id": "core.app",
+  "builtin": true,
+  "name": "程序",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "启动、关闭电脑上的程序，检查某个程序在不在跑。自动化开始之前的那一步常常就是它。",
+  "author": "myautowork",
+  "category": "系统",
+  "keywords": ["启动", "运行", "打开", "进程", "程序", "exe", "app"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": ["launch", "kill", "running", "open_with"],
+    "triggers": []
+  }
+}

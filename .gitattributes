@@ -1,0 +1,23 @@
+# 换行符统一由这里说了算，不靠每个人机器上的 core.autocrlf 设置。
+#
+# 不管的话会怎样：仓库里存的是各人当时那份（有人 LF 有人 CRLF），Linux/macOS 的人
+# 克隆下来会看到"整个文件都改了" —— 几百行的 diff 里其实只有一行是真改动。
+* text=auto
+
+# 这些必须是 CRLF。Windows 的 .bat 用 LF 会在某些情况下解析出错。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制。别做任何转换，也别试图显示 diff。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.pyd binary
+*.dll binary
+*.exe binary
+
+# 数据库文件是二进制的，不该显示 diff（虽然它已经在 .gitignore 里了）
+*.db binary

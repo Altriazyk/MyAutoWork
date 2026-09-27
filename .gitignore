@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 虚拟环境
+.venv/
+venv/
+# 插件自带的虚拟环境（用户给某个插件单独建的环境，几十 MB，不该进版本库）
+plugins/*/.venv/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*~
+
+# ── 本机状态：这些东西是"我这台机器上的"，不是项目的一部分 ──────────────
+# 运行历史库。二进制，而且会一直长 —— 提交进去等于每次跑流程都产生一次 diff。
+history.db
+
+# 流程的运行产物（导出的报表、截图、临时文件……）
+out/
+artifacts/
+work/
+
+# 清单。里面是"我编了哪几份清单、勾了哪些流程"，是本地配置不是源码。
+# 注意：它现在住在 checklists/ 目录下（和 workflows/ 平级），所以整个目录都要忽略。
+checklists/
+
+# AI 设置。理论上在 %APPDATA% 下不该出现在这儿，但万一有人改了路径或者手动
+# 复制过一份过来，**里面有明文 API Key**，绝不能提交。
+ai.json
+
+# 日志和临时文件
+*.log
+*.tmp

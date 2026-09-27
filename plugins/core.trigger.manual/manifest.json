@@ -1,0 +1,19 @@
+{
+  "id": "core.trigger.manual",
+  "builtin": true,
+  "name": "手动触发",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "由用户在流程列表里点击启动，或由命令行启动。所有工作流的默认起点。",
+  "author": "myautowork",
+  "category": "触发",
+  "keywords": ["手动", "起点", "trigger"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "triggers": ["start"],
+    "actions": []
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "win.input",
+  "builtin": true,
+  "name": "键盘鼠标",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "模拟键盘与鼠标：点击、输入文本、按组合键、滚动。文本输入走 Unicode 注入，中文也能直接打进去。",
+  "author": "myautowork",
+  "category": "界面",
+  "keywords": [
+    "键鼠",
+    "input",
+    "点击",
+    "输入",
+    "键盘",
+    "鼠标",
+    "界面自动化"
+  ],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": [
+      "click",
+      "type_text",
+      "press_keys",
+      "cursor",
+      "scroll",
+      "drag"
+    ],
+    "triggers": []
+  },
+  "dependencies": [
+    "pywin32",
+    "pydirectinput"
+  ]
+}

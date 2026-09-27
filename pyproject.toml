@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myautowork"
+version = "0.1.0"
+description = "以插件为核心的 Windows 自动化运行时：内核 + 插件进程 + 工作流引擎 + 图形界面"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# 内核与命令行只用标准库，任何 Python 3.10+ 都能直接跑。
+# 图形界面需要 Qt，装在 ui 附加依赖里。
+dependencies = []
+
+[project.optional-dependencies]
+# 图形界面 + **全部内置插件**需要的依赖，一次装完。不需要再分着装第二遍。
+#
+# Windows 专用的那几个用环境标记（`; sys_platform == ...`）标住，而不是直接堆在这里 ——
+# 这样在别的平台上 `pip install .[ui]` 不会因为 pywin32 装不上而整个失败，
+# 依赖声明本身也仍然是诚实的。
+ui = [
+    # 只需要 QtCore/QtGui/QtWidgets，Essentials 比完整版小一半。
+    "PySide6-Essentials>=6.6",
+    # 界面里"图像兜底"用的（UIA 定位都失败时按图找），少了它那条路会直接报错。
+    "Pillow>=10",
+    # win.uia / win.window 用
+    "uiautomation>=2.0; sys_platform == 'win32'",
+    "pywin32>=306; sys_platform == 'win32'",
+    # win.input 用
+    "pydirectinput>=1.0; sys_platform == 'win32'",
+]
+
+[project.scripts]
+myautowork = "kernel.run:main"
+myautowork-studio = "host.app:main"
+
+[tool.setuptools.packages.find]
+include = ["myautowork*", "kernel*", "host*"]

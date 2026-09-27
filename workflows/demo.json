@@ -1,0 +1,90 @@
+{
+  "id": "demo",
+  "name": "演示：等待后写文件",
+  "version": 1,
+  "description": "第 1 步的验收工作流。手动触发 → 等待 1.5 秒 → 写入文件 → 追加一行汇总。同时把三种参数来源（常量 / 表达式 / 上游连线）都跑一遍。",
+  "variables": {
+    "greeting": "你好，myautowork"
+  },
+  "nodes": [
+    {
+      "id": "n1",
+      "plugin": "core.trigger.manual",
+      "action": "start",
+      "pos": [60, 240],
+      "params": {
+        "note": "命令行验收"
+      }
+    },
+    {
+      "id": "n2",
+      "plugin": "core.time.delay",
+      "action": "sleep",
+      "pos": [340, 240],
+      "params": {
+        "seconds": 1.5,
+        "reason": {
+          "mode": "expr",
+          "value": "{{ $greeting }} —— 等界面加载"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "plugin": "core.file.write",
+      "action": "write",
+      "pos": [640, 110],
+      "params": {
+        "path": {
+          "mode": "expr",
+          "value": "out/demo_{{$date}}.txt"
+        },
+        "content": {
+          "mode": "upstream"
+        },
+        "encoding": "utf-8"
+      }
+    },
+    {
+      "id": "n4",
+      "plugin": "core.file.write",
+      "action": "write",
+      "pos": [920, 340],
+      "params": {
+        "path": {
+          "mode": "expr",
+          "value": "out/demo_{{$date}}.txt"
+        },
+        "content": {
+          "mode": "expr",
+          "value": "\n[{{ $time }}] 等待 {{ $node.n2.slept }} 秒完成；备注：{{ $greeting }}"
+        },
+        "append": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "to": "n2",
+      "kind": "exec"
+    },
+    {
+      "from": "n2",
+      "to": "n3",
+      "kind": "exec"
+    },
+    {
+      "from": "n2",
+      "from_port": "finished_at",
+      "to": "n3",
+      "to_port": "content",
+      "kind": "data"
+    },
+    {
+      "from": "n3",
+      "to": "n4",
+      "kind": "exec"
+    }
+  ]
+}

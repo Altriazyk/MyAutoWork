@@ -130,6 +130,25 @@ _HTLEFT, _HTRIGHT, _HTTOP, _HTTOPLEFT, _HTTOPRIGHT = 10, 11, 12, 13, 14
 _HTBOTTOM, _HTBOTTOMLEFT, _HTBOTTOMRIGHT = 15, 16, 17
 _RESIZE_MARGIN = 6
 
+#: 补窗口样式时用的几个 Win32 常量。
+_GWL_STYLE = -16
+_WS_THICKFRAME = 0x00040000
+_SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOZORDER, _SWP_NOACTIVATE, _SWP_FRAMECHANGED = (
+    0x0001,
+    0x0002,
+    0x0004,
+    0x0010,
+    0x0020,
+)
+
+#: Windows 11 的 DWM 圆角。属性号 33 是 ``DWMWA_WINDOW_CORNER_PREFERENCE``，
+#: 值 2 是 ``DWMWCP_ROUND``。Windows 10 上这个调用会失败（E_INVALIDARG），据此降级。
+_DWMWA_WINDOW_CORNER_PREFERENCE = 33
+_DWMWCP_ROUND = 2
+
+#: 窗口圆角半径（逻辑像素）。比按钮的 6 大一点 —— 窗口的角看起来比控件的角"重"。
+_WINDOW_RADIUS = 10
+
 
 def _signed16(value: int) -> int:
     """Windows 把屏幕坐标的两个 16 位分量打包进 lParam，负数要自己还原。"""
@@ -183,6 +202,11 @@ class MainWindow(QMainWindow):
         self._run_entry_path: Path | None = None
         #: 原生命中测试是否还可用。失败一次就永久关掉，别在每次鼠标移动上重试。
         self._native_resize_ok = True
+        #: 补 WS_THICKFRAME 只做一次（showEvent 里做）。
+        self._thickframe_done = False
+        #: 圆角也只做一次；``_region_corners`` 为 True 表示走的是自己裁那条退路。
+        self._corners_done = False
+        self._region_corners = False
         #: 清单执行队列（按顺序跑）与进度。
         self._checklist_queue: list[Path] = []
         self._checklist_index = -1
@@ -584,6 +608,110 @@ class MainWindow(QMainWindow):
         if scale <= 0:
             scale = 1.0
         return self.mapFromGlobal(QPoint(round(x / scale), round(y / scale)))
+
+    def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt 重写
+        super().showEvent(event)
+        # 只做一次。窗口还没有原生句柄的时候改样式是无效的，所以放在 show 之后。
+        if not self._thickframe_done:
+            self._thickframe_done = True
+            self._enable_native_resize()
+        if not self._corners_done:
+            self._corners_done = True
+            self._round_corners()
+
+    def _round_corners(self) -> None:
+        """给无边框窗口加圆角。优先走系统原生的那条路。
+
+        - **Windows 11**：``DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE)``。
+          这是正解 —— 系统自己裁，边缘**抗锯齿**，阴影也跟着一起处理。
+        - **Windows 10**：没有这个 API（那次调用会返回 E_INVALIDARG），退回
+          ``SetWindowRgn`` 自己裁一个圆角矩形。代价说清楚：**边缘有锯齿**，
+          而且那个区域是窗口坐标系的，**每次改大小都得重设**。
+        """
+        if not _NATIVE_RESIZE:
+            return
+        try:
+            import ctypes
+
+            preference = ctypes.c_int(_DWMWCP_ROUND)
+            result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                int(self.winId()),
+                _DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(preference),
+                ctypes.sizeof(preference),
+            )
+            if result == 0:
+                return  # 系统接管了，不用自己裁
+        except Exception:  # pragma: no cover - 平台细节
+            pass
+        self._region_corners = True
+        self._apply_region_corners()
+
+    def _apply_region_corners(self) -> None:
+        """``SetWindowRgn`` 那条退路：自己裁一个圆角矩形。"""
+        try:
+            import ctypes
+
+            hwnd = int(self.winId())
+            ratio = self.devicePixelRatioF() or 1.0
+            # 区域用的是**物理像素**，所以要乘 DPR。
+            width = int(self.width() * ratio)
+            height = int(self.height() * ratio)
+            radius = max(1, int(_WINDOW_RADIUS * ratio))
+            region = ctypes.windll.gdi32.CreateRoundRectRgn(
+                0, 0, width + 1, height + 1, radius * 2, radius * 2
+            )
+            if not region:
+                self._region_corners = False
+                return
+            # **SetWindowRgn 会接管这个 region**，成功之后不要自己 DeleteObject ——
+            # 删了就是把窗口正在用的东西释放掉。
+            ctypes.windll.user32.SetWindowRgn(hwnd, region, True)
+        except Exception:  # pragma: no cover - 平台细节
+            self._region_corners = False
+
+    def resizeEvent(self, event: Any) -> None:  # noqa: N802 - Qt 重写
+        super().resizeEvent(event)
+        # 自己裁的那条路上，圆角区域是窗口坐标系的 —— 窗口一大，旧区域就不对了
+        # （表现是圆角被"截"在原来的大小上，右下角变成方的）。
+        if self._region_corners:
+            self._apply_region_corners()
+
+    def _enable_native_resize(self) -> None:
+        """给无边框窗口补上 ``WS_THICKFRAME`` —— 没有它，Windows 不执行缩放。
+
+        **这是诊断出来的，不是猜的。** ``Qt.FramelessWindowHint`` 建出来的窗口是
+        ``WS_POPUP``，**不带** ``WS_THICKFRAME``。而 Windows 只在窗口有这个样式时才认
+        ``nativeEvent`` 返回的 ``HTLEFT`` / ``HTRIGHT`` 这些命中结果 —— 所以那边算得再对
+        也没用：真实会话里实测 ``WM_NCHITTEST`` 收到了 1266 次、HT 码也正确，
+        拖动就是没反应，因为 ``GWL_STYLE = 0x960B0000`` 里没有 ``0x00040000``。
+
+        ``SetWindowPos(..., SWP_FRAMECHANGED)`` 那一步不能省：光改样式位，Windows 不会
+        重新计算非客户区，新样式要等下一次窗口尺寸变化才生效。
+        """
+        if not _NATIVE_RESIZE:
+            return
+        try:
+            import ctypes
+
+            hwnd = int(self.winId())
+            user32 = ctypes.windll.user32
+            style = user32.GetWindowLongW(hwnd, _GWL_STYLE)
+            if style & _WS_THICKFRAME:
+                return  # 已经有了（某些平台上 Qt 会自己加）
+            user32.SetWindowLongW(hwnd, _GWL_STYLE, style | _WS_THICKFRAME)
+            user32.SetWindowPos(
+                hwnd,
+                0,
+                0,
+                0,
+                0,
+                0,
+                _SWP_NOSIZE | _SWP_NOMOVE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_FRAMECHANGED,
+            )
+        except Exception:  # pragma: no cover - 平台细节
+            # 补不上就退回到"不能拖边缘缩放"。不该因为这个让窗口打不开。
+            self._native_resize_ok = False
 
     def nativeEvent(self, event_type: Any, message: Any) -> Any:  # noqa: N802 - Qt 重写
         """把窗口边缘 6 像素交给 Windows 的原生缩放逻辑。

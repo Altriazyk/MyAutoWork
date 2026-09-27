@@ -122,3 +122,24 @@ class Context:
         """
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         return self.artifacts_dir / name
+
+    # -- 收尾 -----------------------------------------------------------------
+
+    def on_cleanup(self, callback: Callable[[], Any], *, name: str = "") -> None:
+        """登记一件"插件被卸载时要做的事"。
+
+        **插件起的子进程、开的文件句柄，内核是收不掉的** —— kill 只回收内存和句柄，
+        不会去终止你起过的子进程，也不会删你写了一半的文件。所以你自己登记：
+
+            proc = subprocess.Popen(...)
+            ctx.on_cleanup(lambda: proc.terminate())
+
+        内核停插件时会**先给它一个机会自己收尾，再动手杀**。
+
+        注意 ``ctx`` 是每次动作调用新建的，但这个登记**活在插件进程上** ——
+        动作返回之后它还在，一直留到插件被卸载。
+        """
+        from .lifecycle import on_cleanup as _register  # noqa: PLC0415 - 避免循环导入
+
+        label = name or f"{self.plugin_id}/{self.action_id}"
+        _register(callback, name=label)

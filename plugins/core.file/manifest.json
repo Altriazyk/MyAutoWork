@@ -1,0 +1,19 @@
+{
+  "id": "core.file",
+  "builtin": true,
+  "name": "文件",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "读文件、复制、移动、删除、列目录、看路径信息。写入在「写文件」那个插件里。",
+  "author": "myautowork",
+  "category": "文件",
+  "keywords": ["文件", "读取", "读文件", "复制", "移动", "重命名", "删除", "目录", "文件夹", "路径", "file", "read", "copy", "move"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": ["read", "copy", "move", "delete", "list_dir", "exists", "path_info", "make_dir"],
+    "triggers": []
+  }
+}

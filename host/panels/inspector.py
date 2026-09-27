@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -28,6 +29,29 @@ from PySide6.QtWidgets import (
 
 from .. import theme
 from ..forms.builder import ParamForm
+
+
+def _pretty(value: Any, *, limit: int = 400) -> str:
+    """把节点输出显示成人看的样子。
+
+    **字符串不加引号** —— 输出多半本来就是文本，加一圈引号只是噪音。
+    太长的截断，并明说截了多少 —— 悄悄截断会让人以为"它就这么多"。
+    """
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (dict, list, tuple)):
+        try:
+            import json  # noqa: PLC0415
+
+            text = json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:  # pragma: no cover - 理论上不会走到
+            text = str(value)
+    else:
+        text = repr(value)
+
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}…（还有 {len(text) - limit} 个字）"
 
 
 def _separator() -> QFrame:
@@ -77,6 +101,21 @@ class InspectorPanel(QWidget):
         self.form.changed.connect(self._on_form_changed)
         self.form.pickRequested.connect(self.pickRequested)
         layout.addWidget(self.form)
+
+        # 「上次输出」摆在参数**下面**。排错时的动作顺序就是"我填的参数对吗" →
+        # "那它到底算出了什么"，两件事挨着最顺。没跑过的时候整块藏起来 ——
+        # 常驻一个空框只会占地方。
+        self.output_title = QLabel("上次输出")
+        self.output_title.setStyleSheet(f"color: {theme.NODE_SUBTITLE}; font-size: 11px;")
+        layout.addWidget(self.output_title)
+        self.output_view = QPlainTextEdit()
+        self.output_view.setReadOnly(True)
+        self.output_view.setMinimumHeight(70)
+        self.output_view.setMaximumHeight(170)
+        # 等宽字体：输出多半是路径、数字、JSON，对齐了才看得清。
+        self.output_view.setStyleSheet("font-family: Consolas, monospace; font-size: 11px;")
+        layout.addWidget(self.output_view)
+        self._set_output_visible(False)
 
         layout.addWidget(_separator())
 
@@ -152,6 +191,7 @@ class InspectorPanel(QWidget):
             self.title_edit.setText(item.custom_title or "")
             self.timeout_spin.setValue(float(item.timeout or 0.0))
             self.disabled_check.setChecked(bool(item.disabled))
+            self._show_last_output(item)
             self.set_enabled(True)
         finally:
             self._updating = False
@@ -188,6 +228,32 @@ class InspectorPanel(QWidget):
         self.settings.setEnabled(enabled)
 
     # -- 内部 -----------------------------------------------------------------
+
+    def _set_output_visible(self, show: bool) -> None:
+        self.output_title.setVisible(show)
+        self.output_view.setVisible(show)
+
+    @property
+    def current_node_id(self) -> str:
+        """属性面板现在开着哪个节点。空字符串表示没选中。"""
+        return str(getattr(self._current, "node_id", "") or "")
+
+    def _show_last_output(self, item: Any) -> None:
+        """把选中节点**上一次运行**的结果摆出来。没跑过就整块藏起来。"""
+        outputs = getattr(item, "last_outputs", None) or {}
+        error = str(getattr(item, "last_error", "") or "")
+        if not outputs and not error:
+            self._set_output_visible(False)
+            self.output_view.setPlainText("")
+            return
+
+        lines: list[str] = []
+        if error:
+            lines.append(f"✗ 失败：{error}")
+        for name, value in outputs.items():
+            lines.append(f"{name} = {_pretty(value)}")
+        self.output_view.setPlainText("\n".join(lines))
+        self._set_output_visible(True)
 
     def _on_form_changed(self) -> None:
         if self._updating or self._current is None:

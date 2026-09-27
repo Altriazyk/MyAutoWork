@@ -261,7 +261,17 @@ def _handle(runtime: WorkerRuntime, message: Mapping[str, Any]) -> bool:
     params = message.get("params") or {}
 
     if method == "shutdown":
-        reply(request_id, {"ok": True})
+        # **先让插件自己收拾，再退出。** 它起的子进程、开的句柄、占的端口，
+        # 内核是收不掉的（kill 只回收内存和句柄）。所以给它一个机会跑清理钩子。
+        #
+        # 必须在**回 reply 之前**做完：回了 reply 内核就认为它停了，可能立刻
+        # 去启下一个插件，而那时旧插件还占着资源。
+        from myautowork import run_cleanups  # noqa: PLC0415 - worker 里延迟导入
+
+        problems = run_cleanups()
+        for line in problems:
+            notify({"node_id": "", "level": "warning", "message": f"清理时出问题 —— {line}"})
+        reply(request_id, {"ok": True, "cleanups": len(problems)})
         return False
 
     if method == "ping":

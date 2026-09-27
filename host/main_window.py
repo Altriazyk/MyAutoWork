@@ -1667,6 +1667,18 @@ class MainWindow(QMainWindow):
         self.custom_view.set_delete_enabled(not running)
         self.sidebar.set_enabled_actions(not running)
 
+    def _refresh_inspector_if_current(self, node_id: str) -> None:
+        """跑完一个节点之后，如果属性面板正开着它，就把「上次输出」刷新出来。
+
+        **不刷新的话要切走再切回来才看得到** —— 而"跑一遍、看它给了什么"是最常见的
+        排错动作，多一步切换就足够让人以为这个功能不存在。
+        """
+        if self.inspector.current_node_id != node_id:
+            return
+        item = self.scene.node_item(node_id)
+        if item is not None:
+            self.inspector.show_node(item)
+
     def _on_run_event(self, kind: str, payload: dict[str, Any]) -> None:
         # 从流程列表跑的时候画布上可能是另一条流程，不能去改它的显示。
         if self._run_from_editor:
@@ -1674,10 +1686,15 @@ class MainWindow(QMainWindow):
                 self.scene.mark_node_started(payload["node_id"])
             elif kind == "node_finished":
                 self.scene.mark_node_finished(
-                    payload["node_id"], duration_ms=int(payload.get("duration_ms") or 0), ok=True
+                    payload["node_id"],
+                    duration_ms=int(payload.get("duration_ms") or 0),
+                    ok=True,
+                    outputs=payload.get("outputs") or {},
                 )
+                self._refresh_inspector_if_current(payload["node_id"])
             elif kind == "node_failed":
                 self.scene.mark_node_failed(payload["node_id"], str(payload.get("error") or ""))
+                self._refresh_inspector_if_current(payload["node_id"])
             elif kind == "node_skipped":
                 self.scene.mark_node_skipped(payload["node_id"])
 

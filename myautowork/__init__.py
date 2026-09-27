@@ -48,6 +48,7 @@ from .fields import (
     normalize_fields,
 )
 from .locator import STRATEGY_LABELS, STRATEGY_ORDER, Locator, PathStep
+from .lifecycle import on_cleanup, pending_cleanups, run_cleanups
 
 #: 插件契约版本。内核只接受相同主版本号的插件。
 API_VERSION = "1"
@@ -65,6 +66,9 @@ __all__ = [
     "describe_interface",
     "registered_actions",
     "registered_triggers",
+    "on_cleanup",
+    "pending_cleanups",
+    "run_cleanups",
     "clear_registry",
     # 上下文
     "Context",

@@ -71,6 +71,10 @@ class NodeItem(QGraphicsObject):
         self.run_state: str = ""
         self.run_duration_ms: int | None = None
         self.run_message: str | None = None
+        #: 上一次运行这个节点输出了什么。属性面板靠它显示"它到底算出了什么"。
+        #: 只在画布上跑过的节点才有 —— 从流程列表跑的不进这里（那时画布上可能是另一条流程）。
+        self.last_outputs: dict[str, Any] = {}
+        self.last_error: str = ""
 
         self.input_ports: dict[str, PortItem] = {}
         self.output_ports: dict[str, PortItem] = {}

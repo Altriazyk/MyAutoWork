@@ -304,10 +304,22 @@ class WorkflowScene(QGraphicsScene):
             if edge.src_port.owner.node_id == node_id:
                 edge.set_flow_state("running")
 
-    def mark_node_finished(self, node_id: str, *, duration_ms: int, ok: bool = True) -> None:
+    def mark_node_finished(
+        self,
+        node_id: str,
+        *,
+        duration_ms: int,
+        ok: bool = True,
+        outputs: Mapping[str, Any] | None = None,
+    ) -> None:
         item = self._node_items.get(node_id)
         if item is not None:
             item.set_run_state("success" if ok else "failed", duration_ms=duration_ms)
+            # 记下输出了什么 —— 属性面板要显示这个。**成功才覆盖**：
+            # 失败时旧输出留着比清空有用（"上次成功时它给了什么"往往是排错的线索）。
+            if ok and outputs is not None:
+                item.last_outputs = dict(outputs)
+                item.last_error = ""
         for edge in self._edge_items:
             if edge.src_port.owner.node_id == node_id:
                 edge.set_flow_state("done" if ok else "failed")
@@ -316,6 +328,7 @@ class WorkflowScene(QGraphicsScene):
         item = self._node_items.get(node_id)
         if item is not None:
             item.set_run_state("failed", message=message)
+            item.last_error = message
         for edge in self._edge_items:
             if edge.src_port.owner.node_id == node_id:
                 edge.set_flow_state("failed")

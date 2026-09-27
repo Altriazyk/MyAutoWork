@@ -803,8 +803,8 @@ def main() -> int:
                       registry.is_builtin("core.flow")
                       and {a["id"] for a in next(
                           p for p in registry.catalog() if p["id"] == "core.flow")["actions"]}
-                      == {"if", "repeat", "for_each", "set_var", "math", "string", "list",
-                          "dict", "assert", "fail", "log", "end", "random_wait",
+                      == {"if", "switch", "repeat", "for_each", "set_var", "math", "string",
+                          "list", "dict", "assert", "fail", "log", "end", "random_wait",
                           "wait_file", "wait_process"})
         clear_registry()
 

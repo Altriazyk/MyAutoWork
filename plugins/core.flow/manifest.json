@@ -15,6 +15,7 @@
   "provides": {
     "actions": [
       "if",
+      "switch",
       "repeat",
       "for_each",
       "set_var",

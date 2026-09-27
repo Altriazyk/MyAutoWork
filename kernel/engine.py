@@ -29,7 +29,7 @@ from typing import Any, Callable, Mapping
 
 from .errors import MyAutoWorkError, RunCancelled, WorkflowError
 from .expr import EvalContext, make_builtins, resolve_inputs
-from .graph import EXEC_ERROR, EXEC_SUCCESS, Node, Workflow
+from .graph import EXEC_ERROR, EXEC_SUCCESS, Node, Workflow, branch_names
 
 __all__ = ["NodeResult", "RunResult", "Engine", "new_run_id"]
 
@@ -39,6 +39,15 @@ LogHook = Callable[[str, str, str], None]
 
 def new_run_id() -> str:
     return f"run_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}"
+
+
+def _as_branch_list(value: Any) -> list[str]:
+    """把分支参数的值规整成 ``["分支甲", "分支乙"]``。
+
+    实现搬到了 :func:`kernel.graph.branch_names` —— **画布也要用同一份规则**，
+    各写一份迟早分叉。这里保留这个名字只是为了不打断调用点。
+    """
+    return branch_names({"branches": "value"}, {"value": value})
 
 
 @dataclass
@@ -384,7 +393,7 @@ class Engine:
                 "node_finished",
                 {"node_id": node.id, "duration_ms": duration_ms, "outputs": outputs},
             )
-            return EXEC_SUCCESS
+            return self._exec_port_for(node, spec, outputs, args)
 
         except Exception as exc:
             duration_ms = int((time.perf_counter() - clock) * 1000)
@@ -412,6 +421,47 @@ class Engine:
                 }
                 return EXEC_ERROR
             raise WorkflowError(f"节点 {node.id}（{node.type_key}）执行失败：{message}") from exc
+
+    def _exec_port_for(
+        self,
+        node: Node,
+        spec: Mapping[str, Any],
+        outputs: dict[str, Any],
+        args: Mapping[str, Any],
+    ) -> str:
+        """这个节点跑完之后走哪个执行出口。
+
+        动作没声明 ``branches`` 就还是老规矩：成功走 ``success``。
+
+        声明了就要求它返回里带一个 ``"branch"`` 键，值是某一路的名字。**这里要严格校验** ——
+        返回一个不存在的分支名，如果放过去，执行流会走到一条不存在的边上，表现是
+        "流程跑着跑着就没了"，那是很难查的。宁可在这一步报清楚。
+        """
+        param = str(spec.get("branches") or "").strip()
+        if not param:
+            return EXEC_SUCCESS
+
+        chosen = outputs.pop("branch", None)
+        # 和画布共用同一份解析规则（kernel.graph.branch_names）。
+        declared = branch_names(spec, args)
+
+        if not declared:
+            raise WorkflowError(
+                f"节点 {node.id}（{node.type_key}）的分支参数「{param}」是空的 —— "
+                "它没有任何出口可走，去属性面板里至少加一条分支"
+            )
+        if chosen is None:
+            raise WorkflowError(
+                f"节点 {node.id}（{node.type_key}）声明了分支出口，但结果里没有 branch。"
+                f"它应该返回一个 branch，值是这些之一：{'、'.join(declared)}"
+            )
+        chosen = str(chosen).strip()
+        if chosen not in declared:
+            raise WorkflowError(
+                f"节点 {node.id}（{node.type_key}）要走的出口是「{chosen}」，"
+                f"但它声明的分支里没有这一条。可用的分支：{'、'.join(declared)}"
+            )
+        return chosen
 
     def _check_required(self, node: Node, spec: Mapping[str, Any], args: Mapping[str, Any]) -> None:
         missing = [

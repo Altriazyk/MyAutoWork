@@ -40,7 +40,7 @@ from pathlib import Path  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QInputDialog,
@@ -69,7 +69,16 @@ from host.ai_settings import AiSettings  # noqa: E402
 from host.plugin_view import PluginCard, PluginTile  # noqa: E402
 from kernel.authoring import PluginDraft, plugin_template  # noqa: E402
 from kernel.errors import MyAutoWorkError  # noqa: E402
-from kernel.graph import ParamValue, load_workflow, save_workflow  # noqa: E402
+from kernel.graph import (  # noqa: E402
+    MODE_EXPR,
+    MODE_LITERAL,
+    ParamValue,
+    load_workflow,
+    save_workflow,
+)
+from host.canvas.node_item import NodeItem  # noqa: E402
+from host.canvas.scene import WorkflowScene  # noqa: E402
+from host.panels.inspector import InspectorPanel  # noqa: E402
 from kernel.registry import Registry  # noqa: E402
 from kernel.store import RunStore  # noqa: E402
 
@@ -1347,6 +1356,81 @@ def main() -> int:
             set(n3.output_ports) == {"success", "error", "path", "bytes", "lines", "created"},
             str(sorted(n3.output_ports)),
         )
+
+        # -- 多路分支：分支出口要**当场**出现在画布上 ---------------------------
+        # 这条盯着一个很容易再犯的错：画布上 params 存的是 ParamValue（带 mode/value），
+        # 流程文件里是裸值。解析函数只认裸值的话，界面上填了四条分支画布上一条都不会多 ——
+        # 而"用裸值去测"是测不出来的（第一版就是这么漏过去的）。
+        switch_spec = {
+            "id": "switch",
+            "name": "多路分支",
+            "category": "流程控制",
+            "kind": "action",
+            "branches": "cases",
+            "inputs": {"cases": {"kind": "text", "label": "分支"}},
+            "outputs": {"matched": {"kind": "string", "label": "走了哪条"}},
+        }
+        branch_node = NodeItem(
+            "sw", "core.flow", "switch", switch_spec,
+            params={"cases": ParamValue(mode=MODE_LITERAL, value="")},
+        )
+        checker.check("没填分支时只有 success / error",
+                      set(branch_node.output_ports) == {"success", "error", "matched"},
+                      str(sorted(branch_node.output_ports)))
+        branch_node.params["cases"] = ParamValue(mode=MODE_LITERAL, value="批发\n零售\n退单\n其他")
+        checker.check("改了参数会报出被删掉的出口", branch_node.refresh_ports() == [])
+        checker.check("填了四条分支，画布上就多出四个出口",
+                      set(branch_node.output_ports)
+                      == {"批发", "零售", "退单", "其他", "error", "matched"},
+                      str(sorted(branch_node.output_ports)))
+        checker.check("分支节点**没有** success —— 分支本身就是走通的那条路",
+                      "success" not in branch_node.output_ports,
+                      str(sorted(branch_node.output_ports)))
+        branch_node.params["cases"] = ParamValue(mode=MODE_LITERAL, value="大客户\n小客户")
+        removed = branch_node.refresh_ports()
+        checker.check("改成两条，旧的四个出口报为「已删除」（调用方据此删悬挂的边）",
+                      set(removed) == {"批发", "零售", "退单", "其他"}, str(removed))
+        checker.check("两条分支的出口",
+                      set(branch_node.output_ports) == {"大客户", "小客户", "error", "matched"},
+                      str(sorted(branch_node.output_ports)))
+        branch_node.params["cases"] = ParamValue(mode=MODE_EXPR, value="{{ $x }}")
+        branch_node.refresh_ports()
+        checker.check("分支名是表达式时退回 success/error（编辑期算不出来，画不了出口）",
+                      set(branch_node.output_ports) == {"success", "error", "matched"},
+                      str(sorted(branch_node.output_ports)))
+
+        # -- 多路分支：走**真实路径**（面板表单 → 画面节点）--------------------
+        # 上面那条直接调 NodeItem，是抓不到真正那两个 bug 的：
+        #   1. 画布上 params 存的是 ParamValue，解析函数只认裸值 → 填了也不出出口
+        #   2. 面板直接写 item.params，不走 scene.set_param → 我加在 set_param 里的
+        #      重建从来没被执行过
+        # 所以这条必须**驱动表单控件**，让整条链路真的跑一遍。
+        # 用**独立的一次性场景**，不动主界面 —— 重置 window 的场景会把后面测试引用的
+        # 节点一起删掉（试过一次：报 "Internal C++ object (NodeItem) already deleted"）。
+        probe_scene = WorkflowScene(window.registry)
+        probe_inspector = InspectorPanel(probe_scene)
+        real_switch = probe_scene.add_node("core.flow", "switch", QPointF(0.0, 0.0))
+        probe_inspector.show_node(real_switch)
+        pump(app, 0.15)
+        checker.check("刚拖进来时是默认的 success / error",
+                      "success" in real_switch.output_ports,
+                      str(sorted(real_switch.output_ports)))
+        probe_inspector.form.rows["cases"].value_editor.set_value("批发\n零售\n退单\n其他")
+        pump(app, 0.2)
+        checker.check("在属性面板里填四条分支，画布上当场多出四个出口",
+                      {"批发", "零售", "退单", "其他"} <= set(real_switch.output_ports),
+                      str(sorted(real_switch.output_ports)))
+        checker.check("分支节点上没有 success 了",
+                      "success" not in real_switch.output_ports,
+                      str(sorted(real_switch.output_ports)))
+        probe_inspector.form.rows["cases"].value_editor.set_value("大客户\n小客户")
+        pump(app, 0.2)
+        checker.check("改成两条，旧的四个出口消失、新的两个出现",
+                      {"大客户", "小客户"} <= set(real_switch.output_ports)
+                      and not ({"批发", "零售", "退单", "其他"} & set(real_switch.output_ports)),
+                      str(sorted(real_switch.output_ports)))
+        probe_scene.deleteLater()
+        probe_inspector.deleteLater()
         n1 = window.scene.node_item("n1")
         assert n1 is not None
         checker.check("触发器没有执行入口", "in" not in n1.input_ports)

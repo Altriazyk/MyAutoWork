@@ -49,6 +49,13 @@ class ActionSpec:
     outputs: dict[str, Field] = dc_field(default_factory=dict)
     #: 是否阻塞型动作。界面自动化里大量操作会等待，界面可以据此提示。
     blocking: bool = True
+    #: **分支出口由哪个参数决定。** 填参数名，那个参数的值（字符串列表）就是这个节点
+    #: 的执行出口名。空字符串表示这个动作只有 success / error 两个出口。
+    #:
+    #: 为什么是"由参数决定"而不是写死：分支数量是用户定的 —— 三路、五路、十路。
+    #: 静态声明做不到，而这个设计天然支持"在属性面板里加一条，画布上就多一个出口"，
+    #: 和属性面板本身"schema 驱动"是同一个思路。
+    branches: str = ""
 
     def to_schema(self) -> dict[str, Any]:
         return {
@@ -58,6 +65,7 @@ class ActionSpec:
             "icon": self.icon,
             "description": self.description,
             "blocking": self.blocking,
+            "branches": self.branches,
             "inputs": {k: v.to_schema() for k, v in self.inputs.items()},
             "outputs": {k: v.to_schema() for k, v in self.outputs.items()},
             "kind": "action",
@@ -117,8 +125,15 @@ def action(
     inputs: Mapping[str, Any] | None = None,
     outputs: Mapping[str, Any] | None = None,
     blocking: bool = True,
+    branches: str = "",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """把一个函数注册成工作流可用的动作。"""
+    """把一个函数注册成工作流可用的动作。
+
+    ``branches`` 填一个**输入参数名**，那个参数的值（字符串列表）就是这个节点多出来的
+    执行出口。动作返回 ``{"branch": "某个出口名"}`` 就走到那一路上去。
+
+    这样一条流程要分四路，是 1 个节点 + 4 条边，而不是 3 个串联的 if 节点 + 6 条边。
+    """
 
     def decorate(func: Callable[..., Any]) -> Callable[..., Any]:
         if id in _ACTIONS:
@@ -137,6 +152,7 @@ def action(
             inputs=_as_fields(inputs),
             outputs=_as_fields(outputs),
             blocking=blocking,
+            branches=branches,
         )
         return func
 

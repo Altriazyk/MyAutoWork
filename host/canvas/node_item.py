@@ -18,7 +18,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject
 
-from kernel.graph import ParamValue
+from kernel.graph import ParamValue, branch_names
 
 from .. import theme
 from ..constants import DIR_IN, DIR_OUT, EXEC_IN_PORT, KIND_DATA, KIND_EXEC, PORT_ERROR, PORT_SUCCESS
@@ -74,6 +74,8 @@ class NodeItem(QGraphicsObject):
 
         self.input_ports: dict[str, PortItem] = {}
         self.output_ports: dict[str, PortItem] = {}
+        #: 上一次建端口时用的分支名。用来判断"参数改了之后要不要重建"。
+        self._branches: list[str] = []
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -105,7 +107,26 @@ class NodeItem(QGraphicsObject):
     def is_trigger(self) -> bool:
         return self.spec.get("kind") == "trigger"
 
+    def branch_names(self) -> list[str]:
+        """这个节点的分支出口名（多路分支）。没有就返回空列表。
+
+        **共用内核那份规则**（``kernel.graph.branch_names``）。各写一份的话，两边对
+        "去不去重、逗号算不算分隔符"的理解迟早分叉 —— 表现是画布上看得见一个出口、
+        运行时却说没有这条分支。
+        """
+        return branch_names(self.spec, self.params)
+
     def _build_ports(self) -> None:
+        # 重建前先清掉旧的。分支出口会随参数变，不清的话改一次 cases 就多出一堆
+        # 叠在一起的旧端口 —— 画布上看不出来，但连线时会连到已经不存在的出口上。
+        for port in [*self.input_ports.values(), *self.output_ports.values()]:
+            port.setParentItem(None)
+            if port.scene() is not None:
+                port.scene().removeItem(port)
+        self.input_ports.clear()
+        self.output_ports.clear()
+        self.prepareGeometryChange()
+
         inputs: Mapping[str, Mapping[str, Any]] = self.spec.get("inputs") or {}
         outputs: Mapping[str, Mapping[str, Any]] = self.spec.get("outputs") or {}
 
@@ -116,10 +137,21 @@ class NodeItem(QGraphicsObject):
         for name, schema in inputs.items():
             left.append((name, KIND_DATA, str(schema.get("kind", "any")), str(schema.get("label") or name)))
 
-        right: list[tuple[str, str, str, str]] = [
-            (PORT_SUCCESS, KIND_EXEC, "any", "成功"),
-            (PORT_ERROR, KIND_EXEC, "any", "出错"),
-        ]
+        right: list[tuple[str, str, str, str]] = []
+        branches = self.branch_names()
+        self._branches = list(branches)
+        if branches:
+            # 声明了分支出口的节点：每条分支一个三角出口，再加一个「出错」。
+            #
+            # **没有 success。** 分支本身就是走通的那条路 —— 再留一个 success，用户
+            # 不知道该连哪个，而且引擎永远不会返回它（它只会返回某条分支名）。
+            right.extend((name, KIND_EXEC, "any", name) for name in branches)
+            right.append((PORT_ERROR, KIND_EXEC, "any", "出错"))
+        else:
+            right = [
+                (PORT_SUCCESS, KIND_EXEC, "any", "成功"),
+                (PORT_ERROR, KIND_EXEC, "any", "出错"),
+            ]
         for name, schema in outputs.items():
             right.append((name, KIND_DATA, str(schema.get("kind", "any")), str(schema.get("label") or name)))
 
@@ -315,6 +347,25 @@ class NodeItem(QGraphicsObject):
         painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
 
     # -- 状态 ----------------------------------------------------------------
+
+    def refresh_ports(self) -> list[str] | None:
+        """参数变了之后重建出口。
+
+        返回 ``None`` 表示**什么都没变，没有重建**；返回列表表示重建过了，列表里是
+        **被删掉**的出口名（可能是空的，那是"只加了新出口"）。
+
+        这个区分是必要的：调用方只有在真的重建过之后才需要去重新指向那些边 ——
+        而"重建过但没删东西"和"根本没重建"是两回事，边指向的对象在前者已经换了一批。
+
+        调用方拿到被删掉的名字后要把挂在它们上面的连线一起删掉。**不删的话会留下
+        "连着一条不存在的出口"的边** —— 画布上看还连得好好的，运行时那条路永远走不到。
+        """
+        wanted = self.branch_names()
+        if wanted == self._branches:
+            return None
+        removed = [name for name in self._branches if name not in wanted]
+        self._build_ports()
+        return removed
 
     def set_run_state(self, state: str, *, duration_ms: int | None = None, message: str | None = None) -> None:
         self.run_state = state

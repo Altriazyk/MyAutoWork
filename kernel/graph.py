@@ -35,7 +35,76 @@ KIND_DATA = "data"
 #: 分支的工作流只能整条重跑。
 EXEC_SUCCESS = "success"
 EXEC_ERROR = "error"
-VALID_EXEC_PORTS = frozenset({EXEC_SUCCESS, EXEC_ERROR})
+
+#: 内核自己用的两个出口。动作还可以声明**自己的**分支出口（见
+#: ``myautowork.decorators.action(branches=...)``），名字由用户填。
+RESERVED_EXEC_PORTS = frozenset({EXEC_SUCCESS, EXEC_ERROR})
+
+#: 向后兼容：只含两个固定出口。判断某个端口合不合法请用 ``check_exec_port()``。
+VALID_EXEC_PORTS = RESERVED_EXEC_PORTS
+
+#: 分支名最长多少个字。够用了 —— 它的作用是让人一眼看懂这是哪一路。
+MAX_EXEC_PORT_CHARS = 40
+
+
+def branch_names(spec: Mapping[str, Any], params: Mapping[str, Any]) -> list[str]:
+    """这个节点有哪些分支出口。没有就返回空列表。
+
+    ``spec["branches"]`` 是动作声明的**参数名**，那个参数的值（一行一条，或者一个列表）
+    就是出口名。
+
+    **画布和引擎必须调这同一个函数。** 各写一份的话，两边对"一行里带没带空格""要不要去重"
+    的理解迟早会分叉 —— 表现是画布上看得见一个出口、运行时却说没有这条分支，
+    而那种 bug 极难查。
+    """
+    param = str(spec.get("branches") or "").strip()
+    if not param:
+        return []
+
+    value = params.get(param)
+    if value is None:
+        return []
+    # **两种形状都要认。** 画布上 ``params`` 存的是 ``ParamValue``（带 mode/value），
+    # 而流程文件里是裸值。只认裸值的话，界面上改了分支名画布上什么都不会变 ——
+    # 表现就是"填了四条分支，出口一个都没多出来"。
+    if isinstance(value, ParamValue):
+        if value.mode != MODE_LITERAL:
+            # 「连线」或「表达式」来的分支名在编辑期算不出来，画布没法画出口。
+            # 所以分支名必须是常量 —— 属性面板上要说清楚这一点。
+            return []
+        value = value.value
+    if isinstance(value, str):
+        # 属性面板给的是多行文本。逗号也当分隔符 —— 用户很自然会写成一行逗号分隔。
+        raw: list[Any] = value.replace("，", ",").replace(",", "\n").splitlines()
+    elif isinstance(value, (list, tuple)):
+        raw = list(value)
+    else:
+        raw = [value]
+
+    names: list[str] = []
+    for item in raw:
+        name = str(item).strip()
+        # 去重：重名的两个出口在画布上会叠在一起，用户只会觉得"怎么少了一个"。
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def check_exec_port(name: str, *, where: str = "执行端口") -> str:
+    """校验一个执行端口名，返回规整后的结果；不合法就抛 ``GraphError``。
+
+    **这里只挡明显非法的，不检查"这个节点到底有没有这个出口"。** 因为读流程文件时
+    手上没有插件 schema —— 流程文件要能脱离插件打开，这是刻意的。真正的"有没有这个
+    出口"由画布连线时（手上有 schema）和运行时（兜底）把关。
+    """
+    port = str(name or "").strip()
+    if not port:
+        raise GraphError(f"{where}不能是空的")
+    if len(port) > MAX_EXEC_PORT_CHARS:
+        raise GraphError(f"{where}最多 {MAX_EXEC_PORT_CHARS} 个字，收到 {len(port)} 个")
+    if any(ch in port for ch in "\r\n\t"):
+        raise GraphError(f"{where}不能包含换行或制表符：{port!r}")
+    return port
 
 
 @dataclass
@@ -195,12 +264,11 @@ class Edge:
             raise GraphError(f"第 {index + 1} 条边的 kind 必须是 'exec' 或 'data'，收到 {kind!r}")
 
         if kind == KIND_EXEC:
-            src_port = str(data.get("from_port") or EXEC_SUCCESS)
-            if src_port not in VALID_EXEC_PORTS:
-                raise GraphError(
-                    f"第 {index + 1} 条执行边的 from_port 必须是 "
-                    f"{sorted(VALID_EXEC_PORTS)}，收到 {src_port!r}"
-                )
+            # 端口名放宽了：动作可以声明自己的分支出口（多路分支）。这里只挡空名、
+            # 超长、带换行这些明显非法的 —— 具体"这个节点有没有这个出口"画布和引擎会查。
+            src_port = check_exec_port(
+                data.get("from_port") or EXEC_SUCCESS, where=f"第 {index + 1} 条执行边的 from_port"
+            )
             return cls(src=src, dst=dst, kind=kind, src_port=src_port, dst_port="")
 
         src_port = str(data.get("from_port") or "").strip()

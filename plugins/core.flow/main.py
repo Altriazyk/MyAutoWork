@@ -44,6 +44,7 @@ from myautowork import (
     Enum,
     ExpectedError,
     Integer,
+    List_,
     Number,
     String,
     Text,
@@ -66,6 +67,7 @@ __all__ = [
     "random_wait",
     "list_op",
     "dict_op",
+    "switch_op",
 ]
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -981,6 +983,81 @@ def list_op(
         text = str(result)
     ctx.info(f"{op} -> {text[:80]}" + ("…" if len(text) > 80 else ""))
     return {"result": result, "text": text, "count": count}
+
+
+@action(
+    id="switch",
+    name="多路分支",
+    category="流程控制",
+    icon="git-branch",
+    description=(
+        "按值选一条出口走。**分支名本身就是要比对的值** —— "
+        "四路分支是 1 个节点 + 4 条边，不用串三个「条件判断」"
+    ),
+    branches="cases",
+    inputs={
+        "value": Any_(label="按什么分", help="拿它的值去和每条分支比"),
+        "cases": Text(
+            label="分支",
+            help="一行一条。每一行既是画布上那个出口的名字，也是要比对的值",
+            placeholder="批发\n零售\n退单\n其他",
+        ),
+        "fallback": String(
+            default="",
+            label="都不匹配时走哪条",
+            help="填一条上面已有的分支名；留空表示没有匹配就按失败处理",
+        ),
+        "ignore_case": Bool(default=False, label="忽略大小写", help="比对文本时用"),
+    },
+    outputs={
+        "matched": String(label="走了哪条分支"),
+        "text": String(label="值的文本形式"),
+    },
+)
+def switch_op(
+    ctx: Context,
+    value: Any = None,
+    cases: Any = None,
+    fallback: str = "",
+    ignore_case: bool = False,
+    **_: Any,
+) -> dict[str, Any]:
+    """多路分支。分支名既是出口名，也是要比对的值。
+
+    **为什么让分支名兼任比对值。** 另一种做法是"条件列表 + 分支名列表按位置对应"，
+    但那样一改顺序就全错位了，而且用户改完看不出来。合成一个之后，画布上写的是
+    ``批发 / 零售 / 退单``，既是出口又是判据，读起来就是人话。
+    """
+    # 空行要去掉。``_as_list("")`` 会给出 ``[""]`` 而不是 ``[]`` —— 不过滤的话
+    # "一条分支都没填"会被当成"有一条叫空字符串的分支"，报出来的错完全指错方向。
+    names = [str(item).strip() for item in _as_list(cases, "\n") if str(item).strip()]
+    if not names:
+        raise ValueError("「多路分支」至少要有一条分支，去属性面板里加")
+
+    def same(left: Any, right: Any) -> bool:
+        if ignore_case and isinstance(left, str) and isinstance(right, str):
+            return left.casefold() == right.casefold()
+        return _loose_equal(left, right)
+
+    for name in names:
+        if same(value, name):
+            ctx.info(f"走分支「{name}」")
+            return {"branch": name, "matched": name, "text": str(value)}
+
+    # 没匹配上的处理。**默认报错而不是悄悄走第一条** —— 悄悄走会让"分支写错了"
+    # 表现成"流程莫名走到了别的地方"，而报错会直接告诉你值是什么、有哪些分支。
+    if not fallback:
+        raise ConditionNotMet(
+            f"没有一条分支匹配 {value!r}。现有的分支：{'、'.join(str(n) for n in names)}。"
+            "想让不匹配时也有地方去，就在「都不匹配时走哪条」里填一条分支名"
+        )
+    if fallback not in names:
+        raise ValueError(
+            f"「都不匹配时走哪条」填的是 {fallback!r}，但它不在分支列表里："
+            f"{'、'.join(str(n) for n in names)}"
+        )
+    ctx.info(f"没有匹配，走兜底分支「{fallback}」")
+    return {"branch": fallback, "matched": fallback, "text": str(value)}
 
 
 _DICT_OPS = [

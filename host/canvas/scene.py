@@ -336,7 +336,37 @@ class WorkflowScene(QGraphicsScene):
         if item is None:
             return
         item.params[port] = param
+        self.refresh_node_ports(node_id)
         self.workflowChanged.emit()
+
+    def refresh_node_ports(self, node_id: str) -> None:
+        """参数变了之后重建这个节点的出口，并把牵连到的边收拾干净。
+
+        **必须由属性面板调用。** 面板是直接写 ``item.params`` 再发 ``paramChanged`` 的，
+        根本不走 ``set_param`` —— 在那边加重建是白加的。这一点踩过一次：改完之后
+        界面上填了四条分支，画布上一个出口都没多。
+        """
+        item = self._node_items.get(node_id)
+        if item is None:
+            return
+        removed = item.refresh_ports()
+        if removed is None:
+            return  # 没有分支出口，或者分支一个都没变
+
+        # 重建会把旧的 PortItem 全部销毁，而 EdgeItem 持有的是**对象引用**。
+        # 所以凡是连到这个节点的边都必须按名字重新指过去，落空的就删掉。
+        for edge in list(self._edges_touching(node_id)):
+            outgoing = edge.src_port.owner.node_id == node_id
+            name = edge.src_port.name if outgoing else edge.dst_port.name
+            fresh = None if name in removed else item.port(name, DIR_OUT if outgoing else DIR_IN)
+            if fresh is None:
+                # 出口没了（或者新端口里找不到这个名字）—— 这条边就是一条"永远走不到的路"。
+                self._remove_edge(edge)
+                continue
+            if outgoing:
+                edge.src_port = fresh
+            else:
+                edge.dst_port = fresh
 
     def _on_selection_changed(self) -> None:
         self.nodeSelected.emit(self.selected_node())

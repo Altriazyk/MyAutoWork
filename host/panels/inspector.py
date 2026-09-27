@@ -195,6 +195,9 @@ class InspectorPanel(QWidget):
         self._updating = True
         self._current.params = self.form.params()
         self._updating = False
+        # 参数变了可能让**分支出口**增减（多路分支的「分支」那一栏）。
+        # 这一步必须在这儿做：面板是直接写 item.params 的，不走 scene.set_param。
+        self.scene.refresh_node_ports(self._current.node_id)
         self.paramChanged.emit()
 
     def _on_settings_changed(self) -> None:

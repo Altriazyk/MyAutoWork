@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -140,7 +141,26 @@ class InspectorPanel(QWidget):
         self.timeout_spin.setSpecialValueText("默认")
         self.timeout_spin.setKeyboardTracking(False)
         self.timeout_spin.valueChanged.connect(self._on_settings_changed)
-        form_layout.addRow("超时", self.timeout_spin)
+
+        # **为什么要单独一个「不限时」开关，而不是把秒数填大一点。**
+        # 内核等这个插件是有上限的（默认 300 秒），到点就把插件进程杀掉。而有些动作
+        # 本来就要等很久 —— 等一个任务跑完、等视频播完、等人操作。给它们一个上限的
+        # 结果是长任务中途被杀，而那个报错（"插件在 300s 内没有响应，进程已终止"）
+        # 看起来像插件崩了，完全不像"超时了"，让人从错误的方向去查。
+        self.no_timeout_check = QCheckBox("不限时")
+        self.no_timeout_check.setToolTip(
+            "一直等下去，直到动作自己结束。\n"
+            "**动作真卡住的话它不会回来** —— 用「停止」中断"
+        )
+        self.no_timeout_check.toggled.connect(self._on_no_timeout_toggled)
+
+        timeout_row = QHBoxLayout()
+        timeout_row.setContentsMargins(0, 0, 0, 0)
+        timeout_row.addWidget(self.timeout_spin, 1)
+        timeout_row.addWidget(self.no_timeout_check)
+        timeout_holder = QWidget()
+        timeout_holder.setLayout(timeout_row)
+        form_layout.addRow("超时", timeout_holder)
 
         self.disabled_check = QCheckBox("运行时跳过这个节点")
         self.disabled_check.toggled.connect(self._on_settings_changed)
@@ -190,6 +210,8 @@ class InspectorPanel(QWidget):
 
             self.title_edit.setText(item.custom_title or "")
             self.timeout_spin.setValue(float(item.timeout or 0.0))
+            self.no_timeout_check.setChecked(item.timeout == 0.0)
+            self.timeout_spin.setEnabled(item.timeout != 0.0)
             self.disabled_check.setChecked(bool(item.disabled))
             self._show_last_output(item)
             self.set_enabled(True)
@@ -266,12 +288,22 @@ class InspectorPanel(QWidget):
         self.scene.refresh_node_ports(self._current.node_id)
         self.paramChanged.emit()
 
+    def _on_no_timeout_toggled(self, unlimited: bool) -> None:
+        """勾上「不限时」就把秒数框灰掉 —— 那时候填什么都无所谓，留着可编辑只会让人以为还算数。"""
+        self.timeout_spin.setEnabled(not unlimited)
+        self._on_settings_changed()
+
     def _on_settings_changed(self) -> None:
         if self._updating or self._current is None:
             return
         title = self.title_edit.text().strip()
         self._current.custom_title = title or None
-        self._current.timeout = self.timeout_spin.value() or None
+        # 0 是"不限时"的哨兵值（引擎认它），``None`` 才是"用默认"。
+        # 注意不能写成 ``value() or None`` —— 那会把 0 也变成"默认"，
+        # 于是"不限时"永远设不上。
+        self._current.timeout = 0.0 if self.no_timeout_check.isChecked() else (
+            self.timeout_spin.value() or None
+        )
         self._current.disabled = self.disabled_check.isChecked()
         self._current.update()
         self.paramChanged.emit()

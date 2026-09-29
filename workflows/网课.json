@@ -1,0 +1,101 @@
+{
+  "id": "untitled",
+  "name": "未命名工作流",
+  "version": 1,
+  "description": "",
+  "variables": {},
+  "nodes": [
+    {
+      "id": "n1",
+      "plugin": "core.trigger.manual",
+      "action": "start",
+      "pos": [
+        -513.5588592755514,
+        79.35220378484325
+      ],
+      "params": {}
+    },
+    {
+      "id": "n2",
+      "plugin": "web.browser",
+      "action": "launch",
+      "pos": [
+        -167.63439714066328,
+        -56.270630984362384
+      ],
+      "params": {}
+    },
+    {
+      "id": "n3",
+      "plugin": "web.browser",
+      "action": "open",
+      "pos": [
+        -101.34911939198187,
+        209.2294792283231
+      ],
+      "params": {
+        "url": "https://xidianyjs.yuketang.cn/ai-workspace/lms-graph/33356220/video/90949816?fromProIframe=1&isyth=1&is_chapter=1&node_id=17219216",
+        "cookie": "csrftoken=603wNZMfYgvm2ERyL9kGXDvVurBESkuA; sessionid=ic68iq29awh5wuqmjy8p0kkakqhih3e0; university_id=2924; platform_id=3; xtbz=cloud; platform_type=1; classroomId=33356220; classroom_id=33356220",
+        "wait_seconds": 0.0,
+        "timeout": 30.0
+      }
+    },
+    {
+      "id": "n4",
+      "plugin": "web.browser",
+      "action": "wait_for",
+      "pos": [
+        330.2571234623581,
+        302.618819757954
+      ],
+      "params": {
+        "code": "(() => {\n  const videos = [...document.querySelectorAll('*')]\n    .filter(e => e instanceof HTMLVideoElement);\n\n  if (videos.length) {\n    window.__myaNoVideoSince = null;\n    return videos.every(v =>\n      v.ended ||\n      (isFinite(v.duration) && v.duration > 0 && v.currentTime >= v.duration - 0.5)\n    );\n  }\n\n  if (!window.__myaNoVideoSince) window.__myaNoVideoSince = Date.now();\n  if (Date.now() - window.__myaNoVideoSince >= 5000) {\n    window.__myaNoVideoSince = null;   // ← 关键就这一行\n    return true;\n  }\n  return false;\n})()",
+        "timeout": 12000.0,
+        "interval": 0.5
+      },
+      "timeout": 0.0
+    },
+    {
+      "id": "n5",
+      "plugin": "web.browser",
+      "action": "click",
+      "pos": [
+        698.2054962542269,
+        139.33242203913312
+      ],
+      "params": {
+        "selector": ".learning-space-control-unit-tooltip.arrow-reverse",
+        "timeout": 10.0,
+        "index": 0,
+        "scroll": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "to": "n2",
+      "kind": "exec"
+    },
+    {
+      "from": "n2",
+      "to": "n3",
+      "kind": "exec"
+    },
+    {
+      "from": "n3",
+      "to": "n4",
+      "kind": "exec"
+    },
+    {
+      "from": "n4",
+      "to": "n5",
+      "kind": "exec"
+    },
+    {
+      "from": "n5",
+      "to": "n4",
+      "kind": "exec"
+    }
+  ]
+}

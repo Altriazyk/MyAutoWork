@@ -34,6 +34,13 @@ NotificationHandler = Callable[[dict[str, Any]], None]
 StderrHandler = Callable[[str], None]
 
 
+#: 传给 ``request(timeout=...)`` 表示**不限时**。
+#:
+#: 它和 ``None`` 不是一回事：``None`` 是"没指定，用客户端的默认值"，这个才是
+#: "一直等下去"。用一个负数当标记 —— 负的超时本来就毫无意义，不会和真实值撞上。
+FOREVER = -1.0
+
+
 class WorkerClient:
     """管理一个插件 worker 进程的完整生命周期。"""
 
@@ -222,7 +229,20 @@ class WorkerClient:
                 f"插件 {self.manifest.id} 的进程已断开，无法发送 {method} 请求"
             ) from exc
 
-        effective_timeout = self.default_timeout if timeout is None else timeout
+        # **``None`` 和 ``FOREVER`` 不是一回事。**
+        # ``timeout=None`` 是"没指定，用客户端的默认值"；``FOREVER`` 才是"真的等下去"。
+        if timeout is None:
+            effective_timeout: float | None = self.default_timeout
+        elif timeout < 0:
+            # ``Future.result(timeout=None)`` 会一直阻塞，底层不加任何计时器 ——
+            # 这才是真正的"不限时"。
+            #
+            # 以前这里想用"一个足够大的秒数"糊过去，结果那个数（31 亿秒）把
+            # ``lock.acquire`` 的毫秒参数撑爆了，报 ``OverflowError: timeout value
+            # is too large``。**大数不等于无限**：底层到处都有位宽限制。
+            effective_timeout = None
+        else:
+            effective_timeout = timeout
         try:
             message = future.result(timeout=effective_timeout)
         except FuturesTimeout:

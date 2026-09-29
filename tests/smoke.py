@@ -309,7 +309,17 @@ def main() -> int:
         # -- 7. 破坏 manifest 的插件应该被发现 ---------------------------------
         checker.section("7) 坏插件不应影响其它插件")
         broken_dir = tmpdir / "plugins"
-        shutil.copytree(plugins_dir, broken_dir)
+        # **跳过运行时状态。** ``plugins/web.browser/.profile`` 是浏览器插件自己那份
+        # 登录数据，里面是**正在被 Edge 锁着的活文件**（Cookies、Sessions）——
+        # 不跳的话 copytree 直接 WinError 32 崩掉，而且报的是"另一个程序正在使用
+        # 此文件"，看不出跟被测代码有什么关系。
+        #
+        # 这里要的是**插件本体**，不是它的登录数据。
+        shutil.copytree(
+            plugins_dir,
+            broken_dir,
+            ignore=shutil.ignore_patterns(".profile", "__pycache__", ".venv"),
+        )
         bad_plugin = broken_dir / "core.broken.plugin"
         bad_plugin.mkdir()
         (bad_plugin / "manifest.json").write_text(
@@ -803,9 +813,9 @@ def main() -> int:
                       registry.is_builtin("core.flow")
                       and {a["id"] for a in next(
                           p for p in registry.catalog() if p["id"] == "core.flow")["actions"]}
-                      == {"if", "switch", "repeat", "for_each", "set_var", "math", "string",
-                          "list", "dict", "assert", "fail", "log", "end", "random_wait",
-                          "wait_file", "wait_process"})
+                      == {"if", "switch", "value", "repeat", "for_each", "set_var", "math",
+                          "string", "list", "dict", "assert", "fail", "log", "end",
+                          "random_wait", "wait_file", "wait_process"})
         clear_registry()
 
         # **循环真的能跑**：用「条件判断」+ 回边构造一个三轮循环，交给执行器跑。

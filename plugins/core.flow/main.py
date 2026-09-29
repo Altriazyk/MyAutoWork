@@ -68,6 +68,7 @@ __all__ = [
     "list_op",
     "dict_op",
     "switch_op",
+    "value_op",
 ]
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -983,6 +984,73 @@ def list_op(
         text = str(result)
     ctx.info(f"{op} -> {text[:80]}" + ("…" if len(text) > 80 else ""))
     return {"result": result, "text": text, "count": count}
+
+
+@action(
+    id="value",
+    name="值",
+    category="流程控制",
+    icon="hash",
+    description=(
+        "画布上的一个常量。用连线把它喂给下游的输入 —— "
+        "**比「存进变量再读出来」直观**：值在画布上看得见，同一个值还能喂给好几处"
+    ),
+    inputs={
+        "value": Text(label="值", help="直接填。列表一行一条，字典填 JSON"),
+        "type": Enum(
+            ["文本", "数字", "是/否", "列表", "字典"],
+            default="文本",
+            label="当什么用",
+        ),
+    },
+    outputs={
+        "value": Any_(label="值"),
+        "text": String(label="文本形式"),
+    },
+)
+def value_op(
+    ctx: Context, value: str = "", type: str = "文本", **_: Any
+) -> dict[str, Any]:
+    """把一段文字变成一个**有类型**的值。
+
+    **为什么是"填文字 + 选类型"，而不是让它自己猜。**
+    猜的话：``123`` 是数字还是文本？``是`` 是布尔还是那两个字？``[1,2]`` 是列表还是
+    四个字符？每种猜法都会在某些场景下错，而用户没法纠正 —— 它看起来只是"值传错了"。
+    让他明说一次，比事后查半天强得多。
+    """
+    raw = value if isinstance(value, str) else str(value)
+
+    if type == "数字":
+        try:
+            number = float(raw.strip())
+        except ValueError:
+            raise ValueError(f"「值」填的是 {raw.strip()!r}，那不是一个数字") from None
+        parsed: Any = int(number) if number.is_integer() else number
+    elif type == "是/否":
+        token = raw.strip().casefold()
+        if token in ("是", "真", "true", "1", "yes", "y", "开"):
+            parsed = True
+        elif token in ("否", "假", "false", "0", "no", "n", "关", ""):
+            parsed = False
+        else:
+            raise ValueError(f"「是/否」认不出 {raw.strip()!r} —— 填「是」或「否」")
+    elif type == "列表":
+        # 一行一条。空行去掉 —— 在这里空行只会是排版，不可能是"一个空元素"。
+        parsed = [line for line in raw.splitlines() if line.strip()]
+    elif type == "字典":
+        import json  # noqa: PLC0415
+
+        try:
+            parsed = json.loads(raw)
+        except Exception as exc:
+            raise ValueError(f"「字典」那栏不是合法的 JSON：{exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f"「字典」要一个 JSON 对象，收到 {type(parsed).__name__}")
+    else:
+        parsed = raw
+
+    ctx.info(f"值 = {parsed!r}"[:120])
+    return {"value": parsed, "text": str(parsed)}
 
 
 @action(

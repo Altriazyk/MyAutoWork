@@ -1,0 +1,20 @@
+{
+  "id": "web.browser",
+  "builtin": true,
+  "name": "网页",
+  "version": "0.1.0",
+  "api_version": "1",
+  "description": "用 Edge / Chrome 的调试协议操作网页：打开地址、执行 JavaScript、点元素、填表单、读文本、截图，以及**录制你的操作并生成选择器**。",
+  "author": "myautowork",
+  "category": "网页",
+  "keywords": ["网页", "浏览器", "web", "browser", "chrome", "edge", "爬虫", "自动化", "javascript", "点击", "表单", "录制", "选择器"],
+  "runtime": {
+    "type": "python",
+    "entry": "main.py"
+  },
+  "provides": {
+    "actions": ["launch", "open", "js", "click", "type_text", "read", "wait_for", "screenshot", "cookies", "record_start", "record_dump", "record_stop", "close"],
+    "triggers": []
+  },
+  "dependencies": ["websocket-client>=1.6"]
+}

@@ -56,6 +56,12 @@ class ActionSpec:
     #: 静态声明做不到，而这个设计天然支持"在属性面板里加一条，画布上就多一个出口"，
     #: 和属性面板本身"schema 驱动"是同一个思路。
     branches: str = ""
+    #: **纯数据节点**：只靠数据线喂给下游，不参与执行顺序（画布上那个「值」）。
+    #:
+    #: 声明了它，画布就不画执行入口和成功/出错出口 —— 画出来只会让人以为
+    #: "必须把它接进链条里"。引擎也据此**先把它算出来**，而不是看它有没有连线
+    #: （那样会把一个刚拖进来、还没连线的普通节点也误判成数据节点）。
+    data_only: bool = False
 
     def to_schema(self) -> dict[str, Any]:
         return {
@@ -66,6 +72,7 @@ class ActionSpec:
             "description": self.description,
             "blocking": self.blocking,
             "branches": self.branches,
+            "data_only": self.data_only,
             "inputs": {k: v.to_schema() for k, v in self.inputs.items()},
             "outputs": {k: v.to_schema() for k, v in self.outputs.items()},
             "kind": "action",
@@ -126,6 +133,7 @@ def action(
     outputs: Mapping[str, Any] | None = None,
     blocking: bool = True,
     branches: str = "",
+    data_only: bool = False,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """把一个函数注册成工作流可用的动作。
 
@@ -153,6 +161,7 @@ def action(
             outputs=_as_fields(outputs),
             blocking=blocking,
             branches=branches,
+            data_only=data_only,
         )
         return func
 

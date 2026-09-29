@@ -111,6 +111,15 @@ class NodeItem(QGraphicsObject):
     def is_trigger(self) -> bool:
         return self.spec.get("kind") == "trigger"
 
+    @property
+    def is_data_only(self) -> bool:
+        """这个节点是不是"只出数据"的（画布上那个「值」）。
+
+        看**动作的声明**，不看它有没有连线 —— 后者会把一个刚拖进来、还没连线的
+        普通节点也当数据节点，于是它的执行口会莫名其妙消失。
+        """
+        return bool(self.spec.get("data_only"))
+
     def branch_names(self) -> list[str]:
         """这个节点的分支出口名（多路分支）。没有就返回空列表。
 
@@ -135,14 +144,18 @@ class NodeItem(QGraphicsObject):
         outputs: Mapping[str, Mapping[str, Any]] = self.spec.get("outputs") or {}
 
         left: list[tuple[str, str, str, str]] = []
-        # 触发器没有执行入口 —— 它就是流程的起点。
-        if not self.is_trigger:
+        # 触发器和纯数据节点都没有执行入口：
+        # - 触发器是流程的起点，本来就不该有入口
+        # - 纯数据节点（画布上那个「值」）不参与先后顺序，画个三角只会让人以为
+        #   "必须把它接进链条里"，然后去连一条根本不需要的执行线
+        if not self.is_trigger and not self.is_data_only:
             left.append((EXEC_IN_PORT, KIND_EXEC, "any", ""))
         for name, schema in inputs.items():
             left.append((name, KIND_DATA, str(schema.get("kind", "any")), str(schema.get("label") or name)))
 
         right: list[tuple[str, str, str, str]] = []
-        branches = self.branch_names()
+        # 纯数据节点没有执行出口 —— 它只出数据。
+        branches = self.branch_names() if not self.is_data_only else []
         self._branches = list(branches)
         if branches:
             # 声明了分支出口的节点：每条分支一个三角出口，再加一个「出错」。
@@ -151,7 +164,7 @@ class NodeItem(QGraphicsObject):
             # 不知道该连哪个，而且引擎永远不会返回它（它只会返回某条分支名）。
             right.extend((name, KIND_EXEC, "any", name) for name in branches)
             right.append((PORT_ERROR, KIND_EXEC, "any", "出错"))
-        else:
+        elif not self.is_data_only:
             right = [
                 (PORT_SUCCESS, KIND_EXEC, "any", "成功"),
                 (PORT_ERROR, KIND_EXEC, "any", "出错"),

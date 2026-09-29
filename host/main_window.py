@@ -96,6 +96,7 @@ from .checklist_view import (
 from .dep_installer import DependencyInstallThread, describe_target, target_python
 from .module_editor import ModuleEditorView
 from .plugin_view import PluginDetailsDialog, PluginListView
+from .web_tool import WebToolWindow
 from .runner import WorkflowRunThread
 from .sidebar import (
     PAGE_CHECKLIST,
@@ -204,6 +205,9 @@ class MainWindow(QMainWindow):
         self._native_resize_ok = True
         #: 补 WS_THICKFRAME 只做一次（showEvent 里做）。
         self._thickframe_done = False
+        #: 网页工具窗口。**只建一次然后复用** —— 每次点菜单都新建的话，
+        #: 旧窗口的轮询定时器还在跑，会重复问插件要数据。
+        self._web_tool: WebToolWindow | None = None
         #: 圆角也只做一次；``_region_corners`` 为 True 表示走的是自己裁那条退路。
         self._corners_done = False
         self._region_corners = False
@@ -417,6 +421,12 @@ class MainWindow(QMainWindow):
         run_menu.addAction(self.action_stop)
 
         # 插件页从左侧导航栏进，这里不再另开一个入口。
+        tool_menu = self.menu_bar.addMenu("工具")
+        self.action_web_tool = QAction("网页工具…", self)
+        self.action_web_tool.setToolTip("实时显示你在网页上点了什么，并生成选择器")
+        self.action_web_tool.triggered.connect(self._open_web_tool)
+        tool_menu.addAction(self.action_web_tool)
+
         help_menu = self.menu_bar.addMenu("帮助")
         help_menu.addAction(self.action_about)
 
@@ -1264,6 +1274,22 @@ class MainWindow(QMainWindow):
             "info", f"已删除流程「{entry.display_name}」（{removed}，在回收站里）"
         )
         self._notify(f"已删除「{entry.display_name}」，回收站里可以还原")
+
+    def _open_web_tool(self) -> None:
+        """打开网页工具窗口。
+
+        **允许在运行时开着**（它本身不跑流程，只是问插件要数据），但**运行中不给开** ——
+        那时候插件的调用线程被引擎占着，工具窗口的轮询会排在后面等，
+        表现是"点了没反应"。
+        """
+        if self._run_thread is not None:
+            self._notify("运行中不能开网页工具，先停止", "warning")
+            return
+        if self._web_tool is None:
+            self._web_tool = WebToolWindow(self.registry, self.workdir, self)
+        self._web_tool.show()
+        self._web_tool.raise_()
+        self._web_tool.activateWindow()
 
     def _reveal_plugin(self, plugin_id: str) -> None:
         manifest = self.registry.manifests.get(plugin_id)

@@ -30,6 +30,7 @@ from typing import Any, Callable, Mapping
 from .errors import MyAutoWorkError, RunCancelled, WorkflowError
 from .expr import EvalContext, make_builtins, resolve_inputs
 from .graph import EXEC_ERROR, EXEC_SUCCESS, Node, Workflow, branch_names
+from .rpc import FOREVER
 
 __all__ = ["NodeResult", "RunResult", "Engine", "new_run_id"]
 
@@ -39,6 +40,8 @@ LogHook = Callable[[str, str, str], None]
 
 def new_run_id() -> str:
     return f"run_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}"
+
+
 
 
 def _as_branch_list(value: Any) -> list[str]:
@@ -273,7 +276,29 @@ class Engine:
     # -- 遍历 -----------------------------------------------------------------
 
     def _walk(self, workflow: Workflow, ctx: EvalContext, state: _RunState) -> None:
-        entries = [n for n in workflow.nodes.values() if not workflow.has_exec_in(n.id)]
+        # **纯数据节点先跑一遍。**
+        #
+        # 它们是"值的来源"（画布上那个「值」节点）：不参与执行顺序，只靠数据线喂给
+        # 下游。不先算出来的话，下游 `upstream` 取到的就是空的 —— 而"有没有先算"
+        # 取决于**节点在文件里的先后**，也就是你先拖的哪个。
+        #
+        # 判据是**动作的声明**（``data_only=True``），不是"它有没有执行连线" ——
+        # 后者会把一个刚拖进来、还没连线的普通节点也误判成数据节点，
+        # 那样它的执行口会在画布上莫名其妙地消失。
+        pure = [
+            node
+            for node in workflow.nodes.values()
+            if self._is_data_only(node)
+        ]
+        pure_ids = {node.id for node in pure}
+        for node in pure:
+            self._run_node(node, workflow, ctx, state)
+
+        entries = [
+            node
+            for node in workflow.nodes.values()
+            if not workflow.has_exec_in(node.id) and node.id not in pure_ids
+        ]
         if not entries:
             raise WorkflowError("工作流没有起点节点（每个节点都有执行入边，形成了环）")
 
@@ -355,6 +380,14 @@ class Engine:
 
             client = self.registry.client(node.plugin)
             timeout = node.timeout if node.timeout is not None else self.default_timeout
+            # **0 表示不限时。** 有些动作本来就要等很久（等一个任务跑完、等视频播完、
+            # 等人操作），给它们一个上限只会让长任务中途被杀掉 —— 而那个结果
+            # （"插件在 N 秒内没有响应，进程已终止"）看起来像插件崩了，不像超时。
+            #
+            # 传的是 ``rpc.FOREVER``，**不是一个大数**。曾经用"足够大的秒数"糊过，
+            # 结果 31 亿秒把底层锁的毫秒参数撑爆，报 `OverflowError: timeout value
+            # is too large` —— 大数不等于无限，底层到处都有位宽限制。
+            request_timeout = timeout if timeout else FOREVER
             response = client.request(
                 "invoke",
                 {
@@ -366,7 +399,7 @@ class Engine:
                     "workdir": str(ctx.workdir),
                     "artifacts_dir": str(ctx.workdir / "artifacts"),
                 },
-                timeout=timeout,
+                timeout=request_timeout,
             )
 
             outputs = dict(response.get("output") or {})
@@ -421,6 +454,19 @@ class Engine:
                 }
                 return EXEC_ERROR
             raise WorkflowError(f"节点 {node.id}（{node.type_key}）执行失败：{message}") from exc
+
+    def _is_data_only(self, node: Node) -> bool:
+        """这个节点是不是"只出数据"的（画布上那个「值」）。
+
+        看**动作的声明**（``data_only=True``）。拿不到声明就当普通节点 ——
+        宁可多跑一个节点，也不要把一个普通节点错当成数据节点（那样它的执行口会在
+        画布上消失，而用户不知道为什么）。
+        """
+        try:
+            spec = self.registry.node_spec(node.plugin, node.action)
+        except Exception:
+            return False
+        return bool(spec.get("data_only"))
 
     def _exec_port_for(
         self,

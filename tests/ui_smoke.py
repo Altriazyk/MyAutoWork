@@ -275,7 +275,12 @@ def main() -> int:
         "win.uia",
         "win.window",
     ):
-        shutil.copytree(REPO_ROOT / "plugins" / builtin_id, isolated_plugins / builtin_id)
+        # 同样跳过 .profile —— 那是浏览器插件的登录数据，里面有被锁住的活文件。
+        shutil.copytree(
+            REPO_ROOT / "plugins" / builtin_id,
+            isolated_plugins / builtin_id,
+            ignore=shutil.ignore_patterns(".profile", "__pycache__", ".venv"),
+        )
     # 造一个"用户自己的模块"：自定义模块页管的就是这些。
     from kernel.authoring import PluginDraft, plugin_template  # noqa: PLC0415
 
@@ -323,8 +328,8 @@ def main() -> int:
                       window.title_bar.menu_bar is window.menu_bar,
                       str(type(window.menu_bar).__name__))
         menu_titles = [a.text() for a in window.menu_bar.actions()]
-        checker.check("标题栏里是「文件 编辑 视图 运行 帮助」",
-                      menu_titles == ["文件", "编辑", "视图", "运行", "帮助"], str(menu_titles))
+        checker.check("标题栏里是「文件 编辑 视图 运行 工具 帮助」",
+                      menu_titles == ["文件", "编辑", "视图", "运行", "工具", "帮助"], str(menu_titles))
         checker.check("标题栏没有显示软件名",
                       "myautowork" not in " ".join(
                           label.text() for label in window.title_bar.findChildren(QLabel)

@@ -16,6 +16,7 @@
     "actions": [
       "if",
       "switch",
+      "value",
       "repeat",
       "for_each",
       "set_var",
